@@ -1,0 +1,14 @@
+{
+  "secret": "PASTE_YOUR_WEBHOOK_SECRET_HERE",
+  "ticker": "{{ticker}}",
+  "exchange": "{{exchange}}",
+  "timeframe": "{{interval}}",
+  "price": {{close}},
+  "time": "{{timenow}}",
+  "signal": "buy",
+  "triggers": {
+    "rsi": {{plot_0}},
+    "macd_hist": {{plot_1}},
+    "condition": "rsi_cross_above_30"
+  }
+}
