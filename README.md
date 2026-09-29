@@ -53,6 +53,8 @@ python -m src.train
 #     checks SL/TP every minute, refreshes news before each scan. No TradingView needed.
 python -m src.scanner --once --no-news   # try one scan right now
 python -m src.scanner                    # run continuously
+./status.sh                              # scanner running?, account, open trades, recent closes
+./service.sh install                     # run the scanner as a macOS login service (see below)
 
 # 4b. OR the webhook server (TradingView paid plan). Add SCANNER_ENABLED=true to run the scanner inside it too.
 uvicorn src.webhook_server:app --host 0.0.0.0 --port 8000
@@ -90,6 +92,23 @@ that itself:
 
 To watch results, run `uvicorn src.webhook_server:app` (no `WEBHOOK_SECRET` needed with `SCANNER_ENABLED=true`)
 and open `http://localhost:8000/docs` for `/account`, `/trades` and `/alerts`.
+
+## Keeping it running (macOS)
+
+`./service.sh install` registers the scanner with launchd (`~/Library/LaunchAgents/com.forexmlpapertrader.scanner.plist`).
+It starts immediately and at every login, restarts after a crash, and doesn't depend on any Terminal
+window or app. Output goes to `logs/scanner.log`.
+
+| Command | |
+|---|---|
+| `./service.sh status` | running / pid |
+| `./service.sh logs` | follow the log |
+| `./service.sh restart` | pick up code or `.env` changes (e.g. after `./setup.sh --nlp`) |
+| `./service.sh uninstall` | stop and remove the service |
+
+While the Mac sleeps nothing runs: hourly scans are skipped, and on wake the monitor replays the missed
+1-minute bars (up to 7 days) and closes any trade that hit SL/TP at the correct level. Running the
+scanner by hand as well as the service is harmless (scans are de-duplicated per bar), but pointless.
 
 ## TradingView alert message
 
@@ -159,7 +178,9 @@ curl -X POST localhost:8000/webhook/tradingview -H 'Content-Type: application/js
 - **Walk-forward CV:** sklearn `TimeSeriesSplit` over shared timestamps (expanding window, `gap=4`), plus
   a purge of any training row whose label resolves inside the test window.
 - **Sizing:** risks `RISK_PER_TRADE` of equity to a stop at `SL_ATR_MULT × ATR`, capped at `MAX_LEVERAGE`,
-  rounded down to 1k units. TP is `TP_ATR_MULT × ATR`. Long if `p ≥ threshold`, short if `p ≤ 1 − threshold`.
+  rounded down to 1k units. TP is `TP_ATR_MULT × ATR`. At most `MAX_OPEN_TRADES` positions, one per pair,
+  and at most `MAX_TRADES_PER_CURRENCY` (default 2) betting the same way on any one currency. Otherwise
+  EURMXN short + USDMXN short + GBPMXN short would be one triple-sized peso bet. Long if `p ≥ threshold`, short if `p ≤ 1 − threshold`.
 - **Monitor:** replays every 1m bar since the last check. If a bar touches both SL and TP, the stop is
   assumed to fill first. Gaps fill at the bar open. `COST_BPS` per side is deducted.
 

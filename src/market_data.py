@@ -15,9 +15,13 @@ def yf_symbol(pair: str) -> str:
     return f"{pair}=X"
 
 
+def _empty() -> pd.DataFrame:
+    return pd.DataFrame(columns=OHLC, index=pd.DatetimeIndex([], tz="UTC"), dtype=float)
+
+
 def _clean(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or df.empty:
-        return pd.DataFrame(columns=OHLC)
+        return _empty()
     df = df[OHLC].copy()
     df.index = pd.to_datetime(df.index, utc=True)
     df = df[~df.index.duplicated(keep="last")].sort_index()
@@ -36,6 +40,9 @@ def minute_bars(pair: str, start: pd.Timestamp) -> pd.DataFrame:
     if start < earliest:
         log.warning("%s: requested 1m bars from %s; Yahoo limit clamps to %s", pair, start, earliest)
         start = earliest
+    if start.floor("min") >= now.floor("min"):
+        # no completed minute yet (e.g. a trade opened seconds ago); Yahoo would log "possibly delisted"
+        return _empty()
     df = yf.Ticker(yf_symbol(pair)).history(start=start.floor("min"), end=now + pd.Timedelta(minutes=1),
                                             interval="1m", auto_adjust=False)
     return _clean(df)

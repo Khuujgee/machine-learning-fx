@@ -89,6 +89,9 @@ LOT_STEP = int(os.getenv("LOT_STEP", "1000"))  # round position size down to mic
 COST_BPS = float(os.getenv("COST_BPS", "1.0"))  # simulated spread+slippage per side, in bps of notional
 ONE_POSITION_PER_PAIR = _env_bool("ONE_POSITION_PER_PAIR", True)
 MAX_OPEN_TRADES = int(os.getenv("MAX_OPEN_TRADES", "8"))  # caps total risk at MAX_OPEN_TRADES x RISK_PER_TRADE
+# Max open trades betting the same way on one currency (e.g. EURMXN short + USDMXN short = 2x long MXN).
+# Trades on opposite sides of a currency don't count against each other. 0 disables the limit.
+MAX_TRADES_PER_CURRENCY = int(os.getenv("MAX_TRADES_PER_CURRENCY", "2"))
 REQUIRE_TV_AGREEMENT = _env_bool("REQUIRE_TV_AGREEMENT", True)  # TV "buy"/"sell" must match model
 MONITOR_INTERVAL_SEC = int(os.getenv("MONITOR_INTERVAL_SEC", "60"))
 MAX_BAR_STALENESS_HOURS = float(os.getenv("MAX_BAR_STALENESS_HOURS", "3"))
