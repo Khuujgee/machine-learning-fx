@@ -1,0 +1,18 @@
+# secrets - never commit; .env.example is the shareable template
+.env
+
+# environment / caches
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+# generated data: rebuild with `python -m src.data_collection` and `python -m src.train`
+data/raw/
+data/features.parquet
+data/universe.json
+data/*.db
+data/*.db-shm
+data/*.db-wal
+models/*.joblib
+logs/

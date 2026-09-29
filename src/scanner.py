@@ -140,6 +140,10 @@ def run_scan(engine: PaperEngine, scheduled: bool = False, refresh_news: bool = 
                     if d["action"] != "opened" and p not in probs},
         "strongest": dict(sorted(probs.items(), key=lambda kv: abs(kv[1] - 0.5), reverse=True)[:5]),
     }
+    errors = [d.get("error") for d in decisions.values() if d["action"] == "error"]
+    summary["errors"] = len(errors)
+    summary["first_error"] = errors[0][:200] if errors else None
+    db.log_scan(summary)
     log.info("scan done in %.0fs: %d/%d scored, %d signals, %d opened %s", summary["seconds"],
              summary["scored"], summary["pairs"], summary["signals"], len(opened),
              [f"{o['direction']} {o['pair']}" for o in opened])

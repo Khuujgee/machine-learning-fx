@@ -17,7 +17,7 @@ import pandas as pd
 
 from . import db
 from .config import (ALLOW_UNTRAINED_PAIRS, BAR_HOURS, COST_BPS, LOT_STEP, MAX_BAR_STALENESS_HOURS,
-                     MAX_LEVERAGE, MAX_OPEN_TRADES, MODEL_PATH, ONE_POSITION_PER_PAIR, REQUIRE_TV_AGREEMENT,
+                     MAX_LEVERAGE, MAX_OPEN_TRADES, MAX_TRADES_PER_CURRENCY, MODEL_PATH, ONE_POSITION_PER_PAIR, REQUIRE_TV_AGREEMENT,
                      RISK_PER_TRADE, SL_ATR_MULT, TP_ATR_MULT, UNIVERSE_PATH)
 from .features import build_feature_frame
 from .market_data import download_ohlcv, latest_price, minute_bars, quote_to_usd
@@ -26,6 +26,12 @@ from .sentiment import hourly_currency_sentiment
 log = logging.getLogger(__name__)
 
 _SIGNAL_MAP = {"buy": "long", "long": "long", "sell": "short", "short": "short"}
+
+
+def currency_exposure(pair: str, direction: str) -> dict[str, int]:
+    """Which way a trade bets on each currency: long EURMXN = {EUR: +1, MXN: -1}; short flips the signs."""
+    sign = 1 if direction == "long" else -1
+    return {pair[:3]: sign, pair[3:]: -sign}
 
 
 class NoTrade(Exception):
@@ -112,6 +118,13 @@ class PaperEngine:
                     raise NoTrade(f"already holding an open {pair} position")
                 if len(open_trades) >= MAX_OPEN_TRADES:
                     raise NoTrade(f"max open trades reached ({MAX_OPEN_TRADES})")
+                if MAX_TRADES_PER_CURRENCY > 0:
+                    for ccy, side in currency_exposure(pair, direction).items():
+                        same = [t["pair"] for t in open_trades
+                                if currency_exposure(t["pair"], t["direction"]).get(ccy) == side]
+                        if len(same) >= MAX_TRADES_PER_CURRENCY:
+                            raise NoTrade(f"already {len(same)} trades {'long' if side > 0 else 'short'} {ccy} "
+                                          f"({', '.join(same)}); limit {MAX_TRADES_PER_CURRENCY}")
                 trade = self._open_trade(pair, direction, pred, alert_id)
             return {"action": "opened", "trade": trade, "prediction": pred}
         except NoTrade as e:
@@ -176,6 +189,9 @@ class PaperEngine:
             except Exception as e:
                 log.warning("%s: price fetch failed (%s)", pair, e)
                 continue
+            # Only judge finished 1m bars: Yahoo's still-forming bar can carry a provisional Open/High/Low
+            # (seen live: a phantom "gap" open below the stop that the final bar never had).
+            bars = bars[bars.index + pd.Timedelta(minutes=1) <= pd.Timestamp.now(tz="UTC")]
             if bars.empty:
                 continue
 

@@ -57,6 +57,18 @@ CREATE TABLE IF NOT EXISTS trades (
     pnl_usd       REAL
 );
 CREATE INDEX IF NOT EXISTS ix_trades_status ON trades(status, pair);
+
+CREATE TABLE IF NOT EXISTS scans (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    started_at    TEXT NOT NULL,
+    seconds       REAL,
+    pairs         INTEGER,
+    scored        INTEGER,
+    signals       INTEGER,
+    opened        INTEGER,
+    errors        INTEGER,
+    first_error   TEXT
+);
 """
 
 
@@ -201,6 +213,22 @@ def list_trades(status: Optional[str] = None, limit: int = 100) -> list[dict]:
     params.append(limit)
     with connect() as conn:
         return [dict(r) for r in conn.execute(sql, params)]
+
+
+def log_scan(summary: dict) -> None:
+    with connect() as conn:
+        conn.execute(
+            """INSERT INTO scans (started_at, seconds, pairs, scored, signals, opened, errors, first_error)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (summary["started"], summary["seconds"], summary["pairs"], summary["scored"], summary["signals"],
+             len(summary["opened"]), summary["errors"], summary["first_error"]),
+        )
+
+
+def last_scan() -> Optional[dict]:
+    with connect() as conn:
+        r = conn.execute("SELECT * FROM scans ORDER BY id DESC LIMIT 1").fetchone()
+    return dict(r) if r else None
 
 
 def account_summary() -> dict:
