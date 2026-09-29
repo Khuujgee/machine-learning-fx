@@ -17,6 +17,13 @@ pick_python() {
   return 1
 }
 PY="$(pick_python)" || { echo "No supported Python (3.9-3.13) found. Install 3.12 from python.org and re-run."; exit 1; }
+# setup.sh rebuilds .venv from scratch. If FinBERT's libraries were installed, keep them installed.
+NLP=0
+[[ "${1:-}" == "--nlp" ]] && NLP=1
+if [[ -x .venv/bin/python ]] && .venv/bin/python -c "import torch, transformers" 2>/dev/null; then
+  NLP=1
+  echo "==> FinBERT libraries found in the old .venv: they will be reinstalled"
+fi
 rm -rf .venv
 echo "==> creating .venv with $("$PY" --version) ($PY)"
 "$PY" -m venv .venv
@@ -27,7 +34,7 @@ grep -vE '^(transformers|torch)' requirements.txt > .requirements-core.txt
 .venv/bin/pip install -q -r .requirements-core.txt
 rm -f .requirements-core.txt
 
-if [[ "${1:-}" == "--nlp" ]]; then
+if [[ "$NLP" == "1" ]]; then
   echo "==> installing FinBERT dependencies (transformers + torch)"
   .venv/bin/pip install -q "transformers>=4.40" "torch>=2.2"
 fi
