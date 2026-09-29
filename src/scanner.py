@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import argparse
 import logging
+import subprocess
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Optional
@@ -23,7 +25,7 @@ from typing import Any, Optional
 import pandas as pd
 
 from . import db
-from .config import (MAX_BAR_STALENESS_HOURS, MODEL_PATH, MONITOR_INTERVAL_SEC, SCANNER_DELAY_SEC,
+from .config import (MAX_BAR_STALENESS_HOURS, MODEL_PATH, ROOT, MONITOR_INTERVAL_SEC, SCANNER_DELAY_SEC,
                      SCANNER_REFRESH_NEWS, SCANNER_WORKERS)
 from .paper_engine import NoTrade, PaperEngine
 
@@ -31,6 +33,7 @@ log = logging.getLogger("scanner")
 
 FRESH_BAR_HOURS = 0.75  # scheduled scans only trade on the bar that just closed
 RETRY_WAIT_SEC = 60
+NEWS_TIMEOUT_SEC = 600  # hard limit for one scrape + FinBERT pass
 
 
 # --------------------------------------------------------------------------- schedule
@@ -54,14 +57,29 @@ def next_scan_time(now: pd.Timestamp) -> pd.Timestamp:
 
 # --------------------------------------------------------------------------- one scan
 def _refresh_news() -> None:
-    try:
-        from .sentiment import ingest, scrape_headlines
+    """Scrape + score headlines in a *separate process*.
 
-        log.info("news refresh: %d new headlines scored", ingest(scrape_headlines()))
-    except ImportError as e:
-        log.warning("news refresh skipped (%s) - install transformers + torch for live sentiment", e)
+    FinBERT needs torch and the model needs XGBoost; loading both into one macOS process puts several
+    OpenMP runtimes side by side and can deadlock the scan. A child process keeps them apart and lets us
+    put a hard time limit on scoring.
+    """
+    try:
+        proc = subprocess.run([sys.executable, "-W", "ignore", "-m", "src.sentiment", "scrape"],
+                              cwd=ROOT, capture_output=True, text=True, timeout=NEWS_TIMEOUT_SEC)
+    except subprocess.TimeoutExpired:
+        log.warning("news refresh timed out after %ds - scanning with existing sentiment", NEWS_TIMEOUT_SEC)
+        return
     except Exception:
         log.exception("news refresh failed - scanning with existing sentiment")
+        return
+    out = proc.stdout + proc.stderr
+    if "No module named 'torch'" in out or "No module named 'transformers'" in out:
+        log.warning("news refresh skipped (torch/transformers missing) - run ./setup.sh --nlp for live sentiment")
+    elif proc.returncode != 0:
+        log.warning("news refresh failed (exit %d): %s", proc.returncode, out.strip().splitlines()[-1:] or "")
+    else:
+        inserted = [ln.split("inserted", 1)[1].strip() for ln in out.splitlines() if "inserted" in ln]
+        log.info("news refresh: %s", inserted[-1] if inserted else "done")
 
 
 def _predict_all(engine: PaperEngine, pairs: list[str], max_staleness: float) -> dict[str, Any]:
