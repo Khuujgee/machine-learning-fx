@@ -53,7 +53,7 @@ python -m src.train
 #     checks SL/TP every minute, refreshes news before each scan. No TradingView needed.
 python -m src.scanner --once --no-news   # try one scan right now
 python -m src.scanner                    # run continuously
-./status.sh                              # scanner running?, account, open trades, recent closes
+./status.sh                              # scanner + news archive status, account, open trades, recent closes
 ./service.sh install                     # run the scanner as a macOS login service (see below)
 
 # 4b. OR the webhook server (TradingView paid plan). Add SCANNER_ENABLED=true to run the scanner inside it too.

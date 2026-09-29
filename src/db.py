@@ -225,6 +225,15 @@ def log_scan(summary: dict) -> None:
         )
 
 
+def news_summary() -> dict:
+    """Size and freshness of the scored-headline archive that will feed sentiment features."""
+    with connect() as conn:
+        r = conn.execute("SELECT COUNT(*) AS n, MIN(published_at) AS oldest, MAX(published_at) AS newest FROM news").fetchone()
+        last_day = conn.execute("SELECT COUNT(*) FROM news WHERE published_at >= ?",
+                                ((datetime.now(timezone.utc) - pd.Timedelta(hours=24)).isoformat(),)).fetchone()[0]
+    return {"total": r["n"], "oldest": r["oldest"], "newest": r["newest"], "last_24h": last_day}
+
+
 def last_scan() -> Optional[dict]:
     with connect() as conn:
         r = conn.execute("SELECT * FROM scans ORDER BY id DESC LIMIT 1").fetchone()

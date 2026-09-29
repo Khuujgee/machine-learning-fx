@@ -34,6 +34,21 @@ def scanner_status() -> str:
     return line
 
 
+def news_status() -> str:
+    n = db.news_summary()
+    if not n["total"]:
+        return "News: no headlines stored yet (is FinBERT installed? see README)"
+    now = pd.Timestamp.now(tz="UTC")
+    oldest, newest = pd.Timestamp(n["oldest"]), pd.Timestamp(n["newest"])
+    span_days = (now - oldest).total_seconds() / 86400
+    age_h = (now - newest).total_seconds() / 3600
+    line = (f"News: {n['total']:,} headlines scored, {n['last_24h']} in the last 24h, "
+            f"archive spans {span_days:.1f} days (since {oldest:%m-%d}), newest {age_h:.0f}h old")
+    if age_h > 12 and now.weekday() < 5:
+        line += "\n  !! no new headlines for 12h+ - is the scanner running / FinBERT installed?"
+    return line
+
+
 def main() -> None:
     logging.getLogger("yfinance").setLevel(logging.CRITICAL)
     ap = argparse.ArgumentParser()
@@ -41,6 +56,7 @@ def main() -> None:
     args = ap.parse_args()
 
     print(scanner_status())
+    print(news_status())
     acct = db.account_summary()
     win = f"{acct['win_rate']:.0%}" if acct["win_rate"] is not None else "-"
     print(f"Equity ${acct['equity']:,.2f}   realized P&L ${acct['realized_pnl']:+,.2f}   "
