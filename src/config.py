@@ -102,3 +102,8 @@ SCANNER_ENABLED = _env_bool("SCANNER_ENABLED", False)  # also run the scanner in
 SCANNER_DELAY_SEC = int(os.getenv("SCANNER_DELAY_SEC", "90"))  # wait after the hour for Yahoo to publish the bar
 SCANNER_WORKERS = int(os.getenv("SCANNER_WORKERS", "4"))  # parallel Yahoo downloads
 SCANNER_REFRESH_NEWS = _env_bool("SCANNER_REFRESH_NEWS", True)  # scrape + FinBERT before each scan
+
+# --------------------------------------------------------------------------- Discord alerts (optional)
+# Create one in Discord: channel settings -> Integrations -> Webhooks. Keep it secret (lives in .env only).
+DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "").strip()
+DAILY_SUMMARY_HOUR_UTC = int(os.getenv("DAILY_SUMMARY_HOUR_UTC", "23"))  # 23:00 UTC = 08:00 in Tokyo/Seoul

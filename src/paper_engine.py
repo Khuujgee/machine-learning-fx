@@ -15,7 +15,7 @@ from typing import Any, Optional
 import joblib
 import pandas as pd
 
-from . import db
+from . import db, notify
 from .config import (ALLOW_UNTRAINED_PAIRS, BAR_HOURS, COST_BPS, LOT_STEP, MAX_BAR_STALENESS_HOURS,
                      MAX_LEVERAGE, MAX_OPEN_TRADES, MAX_TRADES_PER_CURRENCY, MODEL_PATH, ONE_POSITION_PER_PAIR, REQUIRE_TV_AGREEMENT,
                      RISK_PER_TRADE, SL_ATR_MULT, TP_ATR_MULT, UNIVERSE_PATH)
@@ -160,6 +160,7 @@ class PaperEngine:
             "atr": pred["atr"],
         }
         trade["id"] = db.insert_trade(trade)
+        notify.trade_opened(trade, pred)
         log.info("OPEN #%s %s %s %s @ %.5f SL %.5f TP %.5f (p_up=%.3f)", trade["id"], direction, units, pair,
                  entry, trade["stop_loss"], trade["take_profit"], pred["prob_up"])
         return trade
@@ -213,6 +214,7 @@ class PaperEngine:
                 if reason:
                     pnl = self._pnl(t, float(exit_px))
                     db.close_trade(t["id"], float(exit_px), exit_ts.isoformat(), reason, pnl)
+                    notify.trade_closed(t, float(exit_px), reason, pnl)
                     closed.append({"id": t["id"], "pair": pair, "reason": reason,
                                    "exit_price": float(exit_px), "pnl_usd": pnl})
                     log.info("CLOSE #%s %s %s @ %.5f pnl $%.2f", t["id"], pair, reason, exit_px, pnl)
@@ -227,4 +229,5 @@ class PaperEngine:
         px = latest_price(t["pair"])
         pnl = self._pnl(t, px)
         db.close_trade(trade_id, px, db.utcnow_iso(), "manual", pnl)
+        notify.trade_closed(t, px, "manual", pnl)
         return {"id": trade_id, "exit_price": px, "pnl_usd": pnl}

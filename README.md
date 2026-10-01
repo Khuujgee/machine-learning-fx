@@ -93,6 +93,29 @@ that itself:
 To watch results, run `uvicorn src.webhook_server:app` (no `WEBHOOK_SECRET` needed with `SCANNER_ENABLED=true`)
 and open `http://localhost:8000/docs` for `/account`, `/trades` and `/alerts`.
 
+## Discord alerts (optional)
+
+Get paper-trading events in a Discord channel. These are **monitoring messages for a paper account, not
+trade recommendations**. The model has no proven edge yet (see Caveats).
+
+1. In Discord: channel settings → Integrations → Webhooks → New Webhook → Copy Webhook URL.
+2. Put it in `.env` (never paste it in chat or commit it; `.env` is git-ignored):
+   `DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...`
+3. `.venv/bin/python -m src.notify test` sends one test message. Then `./service.sh restart`.
+
+| Message | When |
+|---|---|
+| 🟢/🔴 Trade opened | entry, stop, target, size, risk $, model probability |
+| ✅/❌ Trade closed | take-profit / stop-loss / manual, P&L, equity |
+| Scanner started | every service (re)start |
+| ⚠️ Resumed after a pause | the Mac slept for 30+ min (scans in that time were skipped) |
+| ⚠️ Scan is failing / crashed, trade monitor failed | once when it starts, ✅ once when it recovers |
+| 📊 Daily summary | once a day after `DAILY_SUMMARY_HOUR_UTC` (default 23:00 UTC): equity, unrealized P&L, 24h activity |
+
+Alerts can't report that the scanner itself is down or the Mac is asleep, since nothing is running to send
+them. You'll see a "Resumed after a pause" message when it wakes up. Sending never blocks or breaks
+trading: failures are swallowed, and the webhook URL is never logged.
+
 ## Keeping it running (macOS)
 
 `./service.sh install` registers the scanner with launchd (`~/Library/LaunchAgents/com.forexmlpapertrader.scanner.plist`).

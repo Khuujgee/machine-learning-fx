@@ -24,8 +24,8 @@ from typing import Any, Optional
 
 import pandas as pd
 
-from . import db
-from .config import (MAX_BAR_STALENESS_HOURS, MODEL_PATH, ROOT, MONITOR_INTERVAL_SEC, SCANNER_DELAY_SEC,
+from . import db, notify
+from .config import (DAILY_SUMMARY_HOUR_UTC, MAX_BAR_STALENESS_HOURS, MODEL_PATH, ROOT, MONITOR_INTERVAL_SEC, SCANNER_DELAY_SEC,
                      SCANNER_REFRESH_NEWS, SCANNER_WORKERS)
 from .paper_engine import NoTrade, PaperEngine
 
@@ -173,24 +173,59 @@ def run_forever(engine: PaperEngine, monitor: bool = True, refresh_news: bool = 
     """Blocking loop: scan at each hourly close (market hours only); check SL/TP every minute."""
     next_scan = next_scan_time(pd.Timestamp.now(tz="UTC"))
     log.info("scanner started - %d pairs, next scan %s, monitor=%s", len(engine.pairs), next_scan, monitor)
+    notify.info("Scanner started", f"{len(engine.pairs)} pairs, monitor {'on' if monitor else 'off'}, "
+                                   f"next scan {next_scan:%H:%M} UTC")
+    last_tick = pd.Timestamp.now(tz="UTC")
+    scan_failing = monitor_failing = False  # alert once when a problem starts and once when it clears
     while True:
         now = pd.Timestamp.now(tz="UTC")
+        gap = (now - last_tick).total_seconds()
+        if gap > 1800:  # the loop normally ticks every minute, so a long gap means the Mac slept
+            notify.warning("Scanner resumed after a pause",
+                           f"No activity for {gap / 3600:.1f}h (Mac asleep?). Hourly scans in that time were "
+                           "skipped; open trades are re-checked against the missed 1-minute prices.")
+        last_tick = now
+
         if now >= next_scan:
             if fx_market_open(now - pd.Timedelta(hours=1)):
                 try:
-                    run_scan(engine, scheduled=True, refresh_news=refresh_news)
-                except Exception:
+                    summary = run_scan(engine, scheduled=True, refresh_news=refresh_news)
+                    bad = summary["scored"] < summary["pairs"] / 2
+                    if bad and not scan_failing:
+                        notify.warning("Scan is failing", f"Only {summary['scored']}/{summary['pairs']} pairs scored. "
+                                       f"First error: {summary['first_error'] or 'prices unavailable (network?)'}")
+                    elif not bad and scan_failing:
+                        notify.recovered("Scans are working again", f"{summary['scored']}/{summary['pairs']} pairs scored.")
+                    scan_failing = bad
+                except Exception as e:
                     log.exception("scan failed")
+                    if not scan_failing:
+                        notify.warning("Scan crashed", f"{type(e).__name__}: {str(e)[:300]}")
+                    scan_failing = True
             else:
                 log.info("FX market closed - skipping scan")
             next_scan = next_scan_time(pd.Timestamp.now(tz="UTC"))
+
         if monitor:
             try:
                 closed = engine.check_open_trades()
                 if closed:
                     log.info("closed %s", closed)
-            except Exception:
+                if monitor_failing:
+                    notify.recovered("Trade monitor is working again")
+                monitor_failing = False
+            except Exception as e:
                 log.exception("monitor cycle failed")
+                if not monitor_failing:
+                    notify.warning("Trade monitor failed", f"Stop-loss/take-profit checks are not running: "
+                                   f"{type(e).__name__}: {str(e)[:300]}")
+                monitor_failing = True
+
+        today = now.strftime("%Y-%m-%d")
+        if notify.enabled() and now.hour >= DAILY_SUMMARY_HOUR_UTC and notify.kv_get("last_summary") != today:
+            notify.kv_set("last_summary", today)
+            notify.daily_summary()
+
         wait = (next_scan - pd.Timestamp.now(tz="UTC")).total_seconds()
         time.sleep(max(1.0, min(MONITOR_INTERVAL_SEC if monitor else wait, wait)))
 
@@ -230,6 +265,7 @@ def main(argv: Optional[list[str]] = None) -> None:
         import json
 
         print(json.dumps(run_scan(engine, scheduled=False, refresh_news=refresh_news), indent=2, default=str))
+        notify.flush()
         return
     run_forever(engine, monitor=not args.no_monitor, refresh_news=refresh_news)
 
