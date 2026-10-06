@@ -10,7 +10,7 @@ import subprocess
 
 import pandas as pd
 
-from . import db
+from . import db, notify
 from .market_data import latest_price
 
 
@@ -57,6 +57,7 @@ def main() -> None:
 
     print(scanner_status())
     print(news_status())
+    print("Alerts: Discord ON" if notify.enabled() else "Alerts: Discord OFF (set DISCORD_WEBHOOK_URL in .env)")
     acct = db.account_summary()
     win = f"{acct['win_rate']:.0%}" if acct["win_rate"] is not None else "-"
     print(f"Equity ${acct['equity']:,.2f}   realized P&L ${acct['realized_pnl']:+,.2f}   "
