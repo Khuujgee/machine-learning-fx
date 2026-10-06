@@ -100,7 +100,8 @@ def trade_opened(t: dict, pred: dict) -> None:
 def trade_closed(t: dict, exit_price: float, reason: str, pnl: float) -> None:
     equity = db.account_summary()["equity"]
     won = pnl > 0
-    label = {"take_profit": "take-profit hit", "stop_loss": "stop-loss hit", "manual": "closed manually"}.get(reason, reason)
+    label = {"take_profit": "take-profit hit", "stop_loss": "stop-loss hit", "time_exit": "time limit reached",
+             "manual": "closed manually"}.get(reason, reason)
     _send(f"{'✅' if won else '❌'} {t['pair']} {t['direction']} closed: {label}", "", GREEN if won else RED, [
         ("P&L", f"${pnl:+,.2f}"), ("Entry → exit", f"{_px(t['entry_price'])} → {_px(exit_price)}"),
         ("Equity", f"${equity:,.2f}"),

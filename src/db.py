@@ -53,8 +53,9 @@ CREATE TABLE IF NOT EXISTS trades (
     last_checked  TEXT,
     exit_price    REAL,
     exit_time     TEXT,
-    exit_reason   TEXT,                      -- stop_loss | take_profit | manual
-    pnl_usd       REAL
+    exit_reason   TEXT,                      -- stop_loss | take_profit | time_exit | manual
+    pnl_usd       REAL,
+    max_hold_hours REAL                      -- NULL = no time limit (trades opened before this rule existed)
 );
 CREATE INDEX IF NOT EXISTS ix_trades_status ON trades(status, pair);
 
@@ -101,6 +102,9 @@ def init_db() -> None:
         # It is persisted in the file, so setting it once here is enough.
         conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript(SCHEMA)
+        cols = {r["name"] for r in conn.execute("PRAGMA table_info(trades)")}
+        if "max_hold_hours" not in cols:  # database created before the time limit existed
+            conn.execute("ALTER TABLE trades ADD COLUMN max_hold_hours REAL")
 
 
 # --------------------------------------------------------------------------- news

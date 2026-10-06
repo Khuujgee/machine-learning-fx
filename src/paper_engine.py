@@ -17,7 +17,7 @@ import pandas as pd
 
 from . import db, notify
 from .config import (ALLOW_UNTRAINED_PAIRS, BAR_HOURS, COST_BPS, LOT_STEP, MAX_BAR_STALENESS_HOURS,
-                     MAX_LEVERAGE, MAX_OPEN_TRADES, MAX_TRADES_PER_CURRENCY, MODEL_PATH, ONE_POSITION_PER_PAIR, REQUIRE_TV_AGREEMENT,
+                     MAX_HOLD_HOURS, MAX_LEVERAGE, MAX_OPEN_TRADES, MAX_TRADES_PER_CURRENCY, MODEL_PATH, ONE_POSITION_PER_PAIR, REQUIRE_TV_AGREEMENT,
                      RISK_PER_TRADE, SL_ATR_MULT, TP_ATR_MULT, UNIVERSE_PATH)
 from .features import build_feature_frame
 from .market_data import download_ohlcv, latest_price, minute_bars, quote_to_usd
@@ -32,6 +32,16 @@ def currency_exposure(pair: str, direction: str) -> dict[str, int]:
     """Which way a trade bets on each currency: long EURMXN = {EUR: +1, MXN: -1}; short flips the signs."""
     sign = 1 if direction == "long" else -1
     return {pair[:3]: sign, pair[3:]: -sign}
+
+
+FX_CLOSE_WEEKDAY, FX_CLOSE_HOUR_UTC = 4, 22  # spot FX closes Friday ~22:00 UTC
+
+
+def hold_crosses_weekend(now: pd.Timestamp, hours: float) -> bool:
+    """True if a trade opened now with a `hours` limit could still be open when the market shuts for the weekend."""
+    if hours <= 0:
+        return False
+    return now.weekday() == FX_CLOSE_WEEKDAY and now.hour + now.minute / 60 + hours > FX_CLOSE_HOUR_UTC
 
 
 class NoTrade(Exception):
@@ -118,6 +128,8 @@ class PaperEngine:
                     raise NoTrade(f"already holding an open {pair} position")
                 if len(open_trades) >= MAX_OPEN_TRADES:
                     raise NoTrade(f"max open trades reached ({MAX_OPEN_TRADES})")
+                if hold_crosses_weekend(pd.Timestamp.now(tz="UTC"), MAX_HOLD_HOURS):
+                    raise NoTrade(f"a {MAX_HOLD_HOURS:g}h hold would run into the weekend close")
                 if MAX_TRADES_PER_CURRENCY > 0:
                     for ccy, side in currency_exposure(pair, direction).items():
                         same = [t["pair"] for t in open_trades
@@ -158,6 +170,7 @@ class PaperEngine:
             "quote_usd": q_usd,
             "prob_up": pred["prob_up"],
             "atr": pred["atr"],
+            "max_hold_hours": MAX_HOLD_HOURS or None,
         }
         trade["id"] = db.insert_trade(trade)
         notify.trade_opened(trade, pred)
@@ -175,7 +188,9 @@ class PaperEngine:
 
     def check_open_trades(self) -> list[dict]:
         """Walk every 1m bar since the last check. If a bar touches both SL and TP we assume the
-        stop filled first (conservative - intrabar order is unknowable from OHLC)."""
+        stop filled first (conservative - intrabar order is unknowable from OHLC). Trades with a
+        max_hold_hours limit are closed at the first price on/after their deadline (after SL/TP are checked
+        for every earlier minute, so a stop that fired before the deadline always wins)."""
         closed = []
         open_trades = db.get_open_trades()
         by_pair: dict[str, list[dict]] = {}
@@ -199,7 +214,13 @@ class PaperEngine:
             for t, start in zip(trades, starts):
                 long_ = t["direction"] == "long"
                 exit_px = reason = exit_ts = None
+                deadline = (pd.Timestamp(t["entry_time"]) + pd.Timedelta(hours=t["max_hold_hours"])
+                            if t.get("max_hold_hours") else None)
                 for ts, bar in bars[bars.index >= start].iterrows():
+                    if deadline is not None and ts >= deadline:
+                        # time is up and neither SL nor TP was hit: close at the first price on/after the deadline
+                        reason, exit_px, exit_ts = "time_exit", float(bar["Open"]), ts
+                        break
                     hit_sl = bar["Low"] <= t["stop_loss"] if long_ else bar["High"] >= t["stop_loss"]
                     hit_tp = bar["High"] >= t["take_profit"] if long_ else bar["Low"] <= t["take_profit"]
                     if hit_sl or hit_tp:

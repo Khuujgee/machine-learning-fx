@@ -87,6 +87,9 @@ PROB_THRESHOLD = float(os.getenv("PROB_THRESHOLD", "0.58"))  # long if p>=thr, s
 MAX_LEVERAGE = float(os.getenv("MAX_LEVERAGE", "20"))
 LOT_STEP = int(os.getenv("LOT_STEP", "1000"))  # round position size down to micro lots
 COST_BPS = float(os.getenv("COST_BPS", "1.0"))  # simulated spread+slippage per side, in bps of notional
+# Close every new trade after this many hours if neither stop-loss nor take-profit was hit. The model predicts
+# the 4h direction, so holding longer than that trades a prediction that has gone stale. 0 = no time limit.
+MAX_HOLD_HOURS = float(os.getenv("MAX_HOLD_HOURS", "4"))
 ONE_POSITION_PER_PAIR = _env_bool("ONE_POSITION_PER_PAIR", True)
 MAX_OPEN_TRADES = int(os.getenv("MAX_OPEN_TRADES", "8"))  # caps total risk at MAX_OPEN_TRADES x RISK_PER_TRADE
 # Max open trades betting the same way on one currency (e.g. EURMXN short + USDMXN short = 2x long MXN).

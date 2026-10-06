@@ -10,6 +10,8 @@ __pycache__/
 # generated data: rebuild with `python -m src.data_collection` and `python -m src.train`
 data/raw/
 data/features.parquet
+data/oos_predictions_*.parquet
+data/backtest_trades.parquet
 data/universe.json
 data/*.db
 data/*.db-shm

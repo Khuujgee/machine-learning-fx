@@ -203,7 +203,11 @@ curl -X POST localhost:8000/webhook/tradingview -H 'Content-Type: application/js
 - **Sizing:** risks `RISK_PER_TRADE` of equity to a stop at `SL_ATR_MULT × ATR`, capped at `MAX_LEVERAGE`,
   rounded down to 1k units. TP is `TP_ATR_MULT × ATR`. At most `MAX_OPEN_TRADES` positions, one per pair,
   and at most `MAX_TRADES_PER_CURRENCY` (default 2) betting the same way on any one currency. Otherwise
-  EURMXN short + USDMXN short + GBPMXN short would be one triple-sized peso bet. Long if `p ≥ threshold`, short if `p ≤ 1 − threshold`.
+  EURMXN short + USDMXN short + GBPMXN short would be one triple-sized peso bet.
+- **Time limit:** every new trade is closed after `MAX_HOLD_HOURS` (default 4) at the first price on or after the
+  deadline (`exit_reason = time_exit`) unless the stop-loss or take-profit was hit first. The model predicts the
+  4h direction, so holding longer trades a stale prediction. New trades are also refused on Friday afternoons
+  when 4 hours would run past the weekend close. Trades opened before this rule existed keep no time limit. Long if `p ≥ threshold`, short if `p ≤ 1 − threshold`.
 - **Monitor:** replays every 1m bar since the last check. If a bar touches both SL and TP, the stop is
   assumed to fill first. Gaps fill at the bar open. `COST_BPS` per side is deducted.
 
