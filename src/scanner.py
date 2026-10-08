@@ -82,7 +82,8 @@ def _refresh_news() -> None:
         log.info("news refresh: %s", inserted[-1] if inserted else "done")
 
 
-def _predict_all(engine: PaperEngine, pairs: list[str], max_staleness: float) -> dict[str, Any]:
+def _predict_all(engine: PaperEngine, pairs: list[str], max_staleness: float,
+                 workers: int = SCANNER_WORKERS) -> dict[str, Any]:
     """pair -> prediction dict, or the NoTrade / Exception that stopped it."""
     def one(pair: str):
         try:
@@ -90,7 +91,7 @@ def _predict_all(engine: PaperEngine, pairs: list[str], max_staleness: float) ->
         except Exception as e:  # NoTrade or data error; handled per pair
             return pair, e
 
-    with ThreadPoolExecutor(max_workers=SCANNER_WORKERS) as pool:
+    with ThreadPoolExecutor(max_workers=workers) as pool:
         return dict(pool.map(one, pairs))
 
 
@@ -110,6 +111,13 @@ def run_scan(engine: PaperEngine, scheduled: bool = False, refresh_news: bool = 
         log.info("%d pairs missing the latest bar, retrying in %ds", len(late), RETRY_WAIT_SEC)
         time.sleep(RETRY_WAIT_SEC)
         results.update(_predict_all(engine, late, max_staleness))
+
+    # Data errors (not "NoTrade" business reasons) are usually a Yahoo hiccup: give those pairs one more go.
+    broken = [p for p, r in results.items() if isinstance(r, Exception) and not isinstance(r, NoTrade)]
+    if broken:
+        log.info("%d pairs failed (%s), retrying once", len(broken), ", ".join(broken))
+        time.sleep(10)
+        results.update(_predict_all(engine, broken, max_staleness, workers=1))
 
     candidates, decisions = [], {}
     for pair, r in results.items():
