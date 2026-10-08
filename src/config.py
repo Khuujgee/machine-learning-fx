@@ -110,3 +110,28 @@ SCANNER_REFRESH_NEWS = _env_bool("SCANNER_REFRESH_NEWS", True)  # scrape + FinBE
 # Create one in Discord: channel settings -> Integrations -> Webhooks. Keep it secret (lives in .env only).
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "").strip()
 DAILY_SUMMARY_HOUR_UTC = int(os.getenv("DAILY_SUMMARY_HOUR_UTC", "23"))  # 23:00 UTC = 08:00 in Tokyo/Seoul
+
+# --------------------------------------------------------------------------- carry strategy (paper)
+CARRY_ENABLED = _env_bool("CARRY_ENABLED", True)
+HOURLY_ML_ENABLED = _env_bool("HOURLY_ML_ENABLED", True)   # hourly ML scans open new trades (open ones still close)
+CARRY_STARTING_EQUITY = float(os.getenv("CARRY_STARTING_EQUITY", "100000"))
+CARRY_PAIR_VOL = float(os.getenv("CARRY_PAIR_VOL", "0.10"))            # equal risk per pair (relative weights)
+CARRY_TARGET_VOL = float(os.getenv("CARRY_TARGET_VOL", "0.10"))        # whole portfolio scaled to this annual vol
+CARRY_MAX_GROSS_LEVERAGE = float(os.getenv("CARRY_MAX_GROSS_LEVERAGE", "5"))
+# cap any single pair: managed/pegged currencies (e.g. TRY) look calm day-to-day but can jump suddenly
+CARRY_MAX_PAIR_PCT = float(os.getenv("CARRY_MAX_PAIR_PCT", "15"))     # % of equity per pair
+CARRY_MIN_RATE_DIFF = float(os.getenv("CARRY_MIN_RATE_DIFF", "0"))     # % points; below this a pair is flat
+CARRY_RESIZE_TOLERANCE = float(os.getenv("CARRY_RESIZE_TOLERANCE", "0.25"))
+CARRY_SWAP_MARKUP_PCT = float(os.getenv("CARRY_SWAP_MARKUP_PCT", "0.5"))  # retail broker overnight-interest mark-up
+CARRY_REBALANCE_WEEKDAY = int(os.getenv("CARRY_REBALANCE_WEEKDAY", "0"))  # 0 = Monday
+CARRY_REBALANCE_HOUR_UTC = int(os.getenv("CARRY_REBALANCE_HOUR_UTC", "8"))
+
+# --------------------------------------------------------------------------- FX risk & news monitor (Discord)
+MONITOR_ENABLED = _env_bool("MONITOR_ENABLED", True)
+# a separate channel you can share with others; falls back to DISCORD_WEBHOOK_URL
+MONITOR_WEBHOOK_URL = os.getenv("MONITOR_WEBHOOK_URL", "").strip() or DISCORD_WEBHOOK_URL
+MONITOR_BRIEFING_HOUR_UTC = int(os.getenv("MONITOR_BRIEFING_HOUR_UTC", "22"))    # 22:30 UTC = 07:30 Seoul/Tokyo
+MONITOR_BRIEFING_MINUTE = int(os.getenv("MONITOR_BRIEFING_MINUTE", "30"))
+MONITOR_EVENT_LEAD_MIN = int(os.getenv("MONITOR_EVENT_LEAD_MIN", "30"))           # reminder this long before
+MONITOR_VOL_SPIKE_X = float(os.getenv("MONITOR_VOL_SPIKE_X", "4"))                # hourly move vs normal
+MONITOR_NEWS_Z = float(os.getenv("MONITOR_NEWS_Z", "2.5"))                        # news-tone z-score alert level

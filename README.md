@@ -1,5 +1,10 @@
 # Forex ML Paper Trader
 
+> **Research findings:** I tested this system rigorously and it is *not* profitable after costs. Only a simple
+> carry strategy survived. Read the write-up, with charts and reproducible numbers: **[RESEARCH.md](RESEARCH.md)**
+>
+> ![Over 25 years, only carry made money after costs](docs/img/daily_sharpe.png)
+
 TradingView alert **or the built-in hourly scanner** → live features (technicals + FinBERT news sentiment) → XGBoost
 4-hour direction model → simulated trade in SQLite → background monitor closes trades on SL/TP.
 
@@ -115,6 +120,46 @@ trade recommendations**. The model has no proven edge yet (see Caveats).
 Alerts can't report that the scanner itself is down or the Mac is asleep, since nothing is running to send
 them. You'll see a "Resumed after a pause" message when it wakes up. Sending never blocks or breaks
 trading: failures are swallowed, and the webhook URL is never logged.
+
+## FX Risk & News Monitor (Discord)
+
+A Discord feed for G10 currency traders, built from what the research showed *is* useful: event timing,
+volatility forecasts (the one thing that is predictable) and news tone. Information only, not trading advice.
+
+- **☀️ Morning briefing** (Sun-Thu 22:30 UTC, before each FX day): high-impact events, volatility outlook per pair,
+  news tone vs normal per currency, short-term rates and notable headlines.
+- **Alerts:** high-impact release reminders (30 min before), unusual hourly moves (4× normal), unusual news-tone swings
+  (beyond ±2.5σ) and overnight-rate changes.
+
+It runs inside the scanner service (`MONITOR_ENABLED=true`, the default). To share it, create a webhook in a
+public Discord channel and set `MONITOR_WEBHOOK_URL` in `.env`. Your private paper-trading alerts keep using
+`DISCORD_WEBHOOK_URL`. Try it without posting:
+
+```bash
+.venv/bin/python -m src.monitor briefing --dry-run
+```
+
+Settings: `MONITOR_BRIEFING_HOUR_UTC` / `_MINUTE`, `MONITOR_EVENT_LEAD_MIN`, `MONITOR_VOL_SPIKE_X`, `MONITOR_NEWS_Z`.
+Data: Forex Factory's public calendar feed, GDELT 15-minute files (appended to `data/gdelt/live.csv`), FRED, Yahoo.
+
+## Carry strategy (paper) - the active strategy
+
+Research (`python -m src.research_daily`) found no machine-learning edge after costs at hourly or daily
+horizons, but a simple carry rule was positive over 30 years (Sharpe ~0.3-0.4 after spreads, before broker
+mark-ups). So the service now paper-trades carry in its own $100k account, and the hourly ML is paused
+(`HOURLY_ML_ENABLED=false`; its open trades still close normally).
+
+- **Rule:** for every pair where both short-term rates are known (FRED), hold the higher-rate currency against
+  the lower-rate one. Equal risk per pair (size ~ 1/volatility), whole basket scaled to `CARRY_TARGET_VOL`
+  (10%/yr) using the last 60 days, capped at `CARRY_MAX_GROSS_LEVERAGE` (5x) and `CARRY_MAX_PAIR_PCT` (15%) per pair.
+- **Rebalance:** weekly, Monday 08:00 UTC (`CARRY_REBALANCE_*`), and immediately the first time. A position only
+  changes when its direction flips or its size drifts >25% from target. No stop-losses.
+- **P&L:** spot move + interest earned/paid daily - a 0.5%/yr broker overnight mark-up (`CARRY_SWAP_MARKUP_PCT`)
+  - half the assumed spread on entry and exit.
+- **Check it:** `./status.sh` (CARRY section), `python -m src.carry status`, Discord rebalance messages and the
+  daily summary. `python -m src.carry rebalance` forces a rebalance now.
+- **Expect:** low single-digit % a year on average, with long flat periods and occasional sharp drops (carry
+  "crashes", e.g. 2008). The backtest's worst drawdown at 10% vol was ~33%.
 
 ## Keeping it running (macOS)
 

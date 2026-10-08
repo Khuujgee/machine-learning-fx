@@ -59,6 +59,30 @@ CREATE TABLE IF NOT EXISTS trades (
 );
 CREATE INDEX IF NOT EXISTS ix_trades_status ON trades(status, pair);
 
+CREATE TABLE IF NOT EXISTS carry_positions (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    pair          TEXT NOT NULL,
+    side          INTEGER NOT NULL,          -- +1 long base (base rate higher), -1 short base
+    units         REAL NOT NULL,
+    entry_price   REAL NOT NULL,
+    entry_time    TEXT NOT NULL,
+    quote_usd     REAL NOT NULL,
+    notional_usd  REAL NOT NULL,
+    rate_base     REAL NOT NULL,             -- % at entry (FRED)
+    rate_quote    REAL NOT NULL,
+    spread_bps    REAL NOT NULL,
+    status        TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed')),
+    exit_price    REAL,
+    exit_time     TEXT,
+    exit_reason   TEXT,                      -- rebalance | direction flip | no longer eligible
+    spot_pnl      REAL,
+    carry_pnl     REAL,
+    markup_cost   REAL,
+    trading_cost  REAL,
+    pnl_usd       REAL
+);
+CREATE INDEX IF NOT EXISTS ix_carry_status ON carry_positions(status, pair);
+
 CREATE TABLE IF NOT EXISTS kv (
     key   TEXT PRIMARY KEY,
     value TEXT

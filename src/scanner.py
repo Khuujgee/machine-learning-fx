@@ -24,8 +24,9 @@ from typing import Any, Optional
 
 import pandas as pd
 
-from . import db, notify
-from .config import (DAILY_SUMMARY_HOUR_UTC, MAX_BAR_STALENESS_HOURS, MODEL_PATH, ROOT, MONITOR_INTERVAL_SEC, SCANNER_DELAY_SEC,
+from . import carry, db, notify
+from . import monitor as fx_monitor  # not "monitor": run_forever has a monitor= flag
+from .config import (CARRY_ENABLED, DAILY_SUMMARY_HOUR_UTC, HOURLY_ML_ENABLED, MONITOR_ENABLED, MAX_BAR_STALENESS_HOURS, MODEL_PATH, ROOT, MONITOR_INTERVAL_SEC, SCANNER_DELAY_SEC,
                      SCANNER_REFRESH_NEWS, SCANNER_WORKERS)
 from .paper_engine import NoTrade, PaperEngine
 
@@ -181,8 +182,9 @@ def run_forever(engine: PaperEngine, monitor: bool = True, refresh_news: bool = 
     """Blocking loop: scan at each hourly close (market hours only); check SL/TP every minute."""
     next_scan = next_scan_time(pd.Timestamp.now(tz="UTC"))
     log.info("scanner started - %d pairs, next scan %s, monitor=%s", len(engine.pairs), next_scan, monitor)
-    notify.info("Scanner started", f"{len(engine.pairs)} pairs, monitor {'on' if monitor else 'off'}, "
-                                   f"next scan {next_scan:%H:%M} UTC")
+    notify.info("Scanner started", f"hourly ML {'on' if HOURLY_ML_ENABLED else 'PAUSED'} ({len(engine.pairs)} pairs), "
+                                   f"carry {'on' if CARRY_ENABLED else 'off'}, FX monitor {'on' if MONITOR_ENABLED else 'off'}, "
+                                   f"trade monitor {'on' if monitor else 'off'}")
     last_tick = pd.Timestamp.now(tz="UTC")
     scan_failing = monitor_failing = False  # alert once when a problem starts and once when it clears
     while True:
@@ -194,7 +196,25 @@ def run_forever(engine: PaperEngine, monitor: bool = True, refresh_news: bool = 
                            "skipped; open trades are re-checked against the missed 1-minute prices.")
         last_tick = now
 
-        if now >= next_scan:
+        if MONITOR_ENABLED:
+            try:
+                fx_monitor.tick(now)
+            except Exception:
+                log.exception("monitor tick failed")
+
+        if CARRY_ENABLED:
+            try:
+                carry.maybe_rebalance(now)
+            except Exception as e:
+                log.exception("carry rebalance failed")
+                notify.warning("Carry rebalance failed", f"{type(e).__name__}: {str(e)[:300]} - will retry next minute")
+
+        if now >= next_scan and not HOURLY_ML_ENABLED:
+            # hourly ML paused: no new hourly trades, but keep growing the news archive every hour
+            if refresh_news and fx_market_open(now - pd.Timedelta(hours=1)):
+                _refresh_news()
+            next_scan = next_scan_time(pd.Timestamp.now(tz="UTC"))
+        elif now >= next_scan:
             if fx_market_open(now - pd.Timedelta(hours=1)):
                 try:
                     summary = run_scan(engine, scheduled=True, refresh_news=refresh_news)
