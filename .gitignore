@@ -12,9 +12,16 @@ data/raw/
 data/features.parquet
 data/oos_predictions_*.parquet
 data/backtest_trades.parquet
+data/markets/
+data/macro/
+data/daily/
+data/gdelt/
+data/calendar/
+data/research_*.txt
 data/universe.json
 data/*.db
 data/*.db-shm
 data/*.db-wal
 models/*.joblib
+models/vol_har.json
 logs/

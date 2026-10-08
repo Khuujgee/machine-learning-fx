@@ -38,14 +38,16 @@ def _valid(url: str) -> bool:
     return p.scheme == "http" and p.hostname in ("127.0.0.1", "localhost")
 
 
-def enabled() -> bool:
-    return bool(DISCORD_WEBHOOK_URL) and _valid(DISCORD_WEBHOOK_URL)
+def enabled(url: Optional[str] = None) -> bool:
+    url = DISCORD_WEBHOOK_URL if url is None else url
+    return bool(url) and _valid(url)
 
 
-def _post(payload: dict) -> bool:
+def _post(payload: dict, url: Optional[str] = None) -> bool:
+    url = url or DISCORD_WEBHOOK_URL
     for attempt in range(3):
         try:
-            r = requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=10)
+            r = requests.post(url, json=payload, timeout=10)
             if r.status_code == 429:  # rate limited: wait as long as Discord asks
                 time.sleep(min(float(r.json().get("retry_after", 2)), 30))
                 continue
@@ -59,14 +61,18 @@ def _post(payload: dict) -> bool:
     return False
 
 
-def _send(title: str, description: str = "", color: int = BLUE, fields: Optional[list[tuple]] = None) -> None:
-    if not enabled():
+def _send(title: str, description: str = "", color: int = BLUE, fields: Optional[list[tuple]] = None,
+          url: Optional[str] = None, username: str = "FX Paper Trader", footer: Optional[str] = None,
+          inline: bool = True) -> None:
+    if not enabled(url):
         return
     embed: dict[str, Any] = {"title": title[:250], "description": description[:3500], "color": color,
                              "timestamp": pd.Timestamp.now(tz="UTC").isoformat()}
     if fields:
-        embed["fields"] = [{"name": n, "value": str(v)[:1000] or "-", "inline": True} for n, v in fields][:25]
-    _pool.submit(_post, {"username": "FX Paper Trader", "embeds": [embed], "allowed_mentions": {"parse": []}})
+        embed["fields"] = [{"name": n[:250], "value": str(v)[:1020] or "-", "inline": inline} for n, v in fields][:25]
+    if footer:
+        embed["footer"] = {"text": footer[:2000]}
+    _pool.submit(_post, {"username": username, "embeds": [embed], "allowed_mentions": {"parse": []}}, url)
 
 
 def _safe(fn):
@@ -145,6 +151,11 @@ def daily_summary() -> None:
             lines.append(f"`{t['pair']}` {t['direction']:5} {pnl:+9,.0f}")
         except Exception:
             lines.append(f"`{t['pair']}` {t['direction']:5}       n/a")
+    try:
+        from . import carry  # local import: carry imports notify
+        carry_line = carry.report().splitlines()[0].replace("CARRY (paper): ", "")
+    except Exception:
+        carry_line = "n/a"
     news = db.news_summary()
     win = f"{acct['win_rate']:.0%}" if acct["win_rate"] is not None else "-"
     _send("📊 Daily summary (paper account)", "\n".join(lines) or "No open positions.", BLUE, [
@@ -154,6 +165,7 @@ def daily_summary() -> None:
         ("Last 24h", f"{opened} opened, {closed[0]} closed (${closed[1]:+,.0f})"),
         ("All-time", f"{acct['closed_trades']} closed, win rate {win}"),
         ("News archive", f"{news['total']:,} headlines"),
+        ("Carry account", carry_line[:1000]),
     ])
 
 

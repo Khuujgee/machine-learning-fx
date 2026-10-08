@@ -10,7 +10,8 @@ import subprocess
 
 import pandas as pd
 
-from . import db, notify
+from . import carry, db, notify
+from .config import HOURLY_ML_ENABLED
 from .market_data import latest_price
 
 
@@ -29,7 +30,9 @@ def scanner_status() -> str:
                  f"{last['scored']}/{last['pairs']} pairs scored, {last['signals']} signals, {last['opened']} opened")
         if last["errors"]:
             line += f"\n  !! {last['errors']} pairs failed, e.g. {last['first_error']}  (network down / Mac asleep?)"
-        if mins > 75 and started.weekday() < 5:
+        if not HOURLY_ML_ENABLED:
+            line += "\n  Hourly ML is PAUSED (HOURLY_ML_ENABLED=false): no new hourly trades; news still refreshes hourly"
+        elif mins > 75 and started.weekday() < 5:
             line += "\n  !! no scan for over an hour - is the Mac asleep?"
     return line
 
@@ -58,6 +61,10 @@ def main() -> None:
     print(scanner_status())
     print(news_status())
     print("Alerts: Discord ON" if notify.enabled() else "Alerts: Discord OFF (set DISCORD_WEBHOOK_URL in .env)")
+    print()
+    print(carry.report())
+    print()
+    print("HOURLY ML (paper):")
     acct = db.account_summary()
     win = f"{acct['win_rate']:.0%}" if acct["win_rate"] is not None else "-"
     print(f"Equity ${acct['equity']:,.2f}   realized P&L ${acct['realized_pnl']:+,.2f}   "
